@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>출퇴근 체크 앱</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>출퇴근 체크</h1>
+        <div>
+            <label for="employee">직원 선택: </label>
+            <select id="employee">
+                {% for employee in employees %}
+                <option value="{{ employee.id }}">{{ employee.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div id="status" class="inactive">출근 전</div>
+        <button id="clockIn" class="button active">출근</button>
+        <button id="clockOut" class="button inactive" disabled>퇴근</button>
+        <div id="workTime">근무시간: 00:00:00</div>
+        <div class="log">
+            <h3>출근 이력</h3>
+            <ul id="logList"></ul>
+        </div>
+    </div>
+    <script>
+        let clockInTime;
+        const officeLocation = { lat: 37.5665, lng: 126.9780 }; // 예시로 서울의 위도와 경도 사용
+        const geoFenceRadius = 500; // 500 미터
+
+        function checkLocation(callback) {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((position) => {
+                    const userLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    };
+                    const distance = getDistance(userLocation, officeLocation);
+                    if (distance <= geoFenceRadius) {
+                        callback(true);
+                    } else {
+                        alert('사무실 근처에서만 출근/퇴근 버튼을 사용할 수 있습니다.');
+                        callback(false);
+                    }
+                });
+            } else {
+                alert('Geolocation을 지원하지 않는 브라우저입니다.');
+                callback(false);
+            }
+        }
+
+        function getDistance(loc1, loc2) {
+            const R = 6371e3; // metres
+            const φ1 = loc1.lat * Math.PI/180;
+            const φ2 = loc2.lat * Math.PI/180;
+            const Δφ = (loc2.lat - loc1.lat) * Math.PI/180;
+            const Δλ = (loc2.lng - loc1.lng) * Math.PI/180;
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        document.getElementById('clockIn').addEventListener('click', () => {
+            checkLocation((isWithinGeoFence) => {
+                if (isWithinGeoFence) {
+                    clockInTime = new Date();
+                    document.getElementById('status').classList.remove('inactive');
+                    document.getElementById('status').classList.add('active');
+                    document.getElementById('status').innerText = '근무 중';
+                    document.getElementById('clockIn').disabled = true;
+                    document.getElementById('clockOut').disabled = false;
+                    startWorkTimeCalculation();
+                    // 서버에 출근 시간 기록 요청
+                }
+            });
+        });
+
+        document.getElementById('clockOut').addEventListener('click', () => {
+            checkLocation((isWithinGeoFence) => {
+                if (isWithinGeoFence) {
+                    const clockOutTime = new Date();
+                    document.getElementById('status').classList.remove('active');
+                    document.getElementById('status').classList.add('inactive');
+                    document.getElementById('status').innerText = '출근 전';
+                    document.getElementById('clockIn').disabled = false;
+                    document.getElementById('clockOut').disabled = true;
+                    stopWorkTimeCalculation();
+                    // 서버에 퇴근 시간 기록 요청
+                }
+            });
+        });
+
+        let workTimeInterval;
+        function startWorkTimeCalculation() {
+            workTimeInterval = setInterval(() => {
+                const now = new Date();
+                const elapsed = new Date(now - clockInTime);
+                const hours = String(elapsed.getUTCHours()).padStart(2, '0');
+                const minutes = String(elapsed.getUTCMinutes()).padStart(2, '0');
+                const seconds = String(elapsed.getUTCSeconds()).padStart(2, '0');
+                document.getElementById('workTime').innerText = `근무시간: ${hours}:${minutes}:${seconds}`;
+            }, 1000);
+        }
+
+        function stopWorkTimeCalculation() {
+            clearInterval(workTimeInterval);
+        }
+    </script>
+</body>
+</html>
