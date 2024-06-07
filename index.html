@@ -4,15 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>출퇴근 체크 앱</title>
-    <style>
-        /* 기본 스타일 설정 */
-        body { font-family: Arial, sans-serif; }
-        .container { max-width: 600px; margin: 0 auto; text-align: center; }
-        .button { padding: 10px 20px; margin: 10px; cursor: pointer; }
-        .active { background-color: green; color: white; }
-        .inactive { background-color: red; color: white; }
-        .log { text-align: left; margin-top: 20px; }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <div class="container">
@@ -20,9 +12,9 @@
         <div>
             <label for="employee">직원 선택: </label>
             <select id="employee">
-                <option value="황길동">황길동</option>
-                <option value="김이박">김이박</option>
-                <option value="이길희">이길희</option>
+                {% for employee in employees %}
+                <option value="{{ employee.id }}">{{ employee.name }}</option>
+                {% endfor %}
             </select>
         </div>
         <div id="status" class="inactive">출근 전</div>
@@ -35,24 +27,89 @@
         </div>
     </div>
     <script>
-        // JavaScript 코드로 기능 구현
+        let clockInTime;
+        const officeLocation = { lat: 37.5665, lng: 126.9780 }; // 예시로 서울의 위도와 경도 사용
+        const geoFenceRadius = 500; // 500 미터
+
+        function checkLocation(callback) {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((position) => {
+                    const userLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    };
+                    const distance = getDistance(userLocation, officeLocation);
+                    if (distance <= geoFenceRadius) {
+                        callback(true);
+                    } else {
+                        alert('사무실 근처에서만 출근/퇴근 버튼을 사용할 수 있습니다.');
+                        callback(false);
+                    }
+                });
+            } else {
+                alert('Geolocation을 지원하지 않는 브라우저입니다.');
+                callback(false);
+            }
+        }
+
+        function getDistance(loc1, loc2) {
+            const R = 6371e3; // metres
+            const φ1 = loc1.lat * Math.PI/180;
+            const φ2 = loc2.lat * Math.PI/180;
+            const Δφ = (loc2.lat - loc1.lat) * Math.PI/180;
+            const Δλ = (loc2.lng - loc1.lng) * Math.PI/180;
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
         document.getElementById('clockIn').addEventListener('click', () => {
-            document.getElementById('status').classList.remove('inactive');
-            document.getElementById('status').classList.add('active');
-            document.getElementById('status').innerText = '근무 중';
-            document.getElementById('clockIn').disabled = true;
-            document.getElementById('clockOut').disabled = false;
-            // 출근 시간 기록 및 근무 시간 계산 시작
+            checkLocation((isWithinGeoFence) => {
+                if (isWithinGeoFence) {
+                    clockInTime = new Date();
+                    document.getElementById('status').classList.remove('inactive');
+                    document.getElementById('status').classList.add('active');
+                    document.getElementById('status').innerText = '근무 중';
+                    document.getElementById('clockIn').disabled = true;
+                    document.getElementById('clockOut').disabled = false;
+                    startWorkTimeCalculation();
+                    // 서버에 출근 시간 기록 요청
+                }
+            });
         });
 
         document.getElementById('clockOut').addEventListener('click', () => {
-            document.getElementById('status').classList.remove('active');
-            document.getElementById('status').classList.add('inactive');
-            document.getElementById('status').innerText = '출근 전';
-            document.getElementById('clockIn').disabled = false;
-            document.getElementById('clockOut').disabled = true;
-            // 퇴근 시간 기록 및 근무 시간 계산 종료
+            checkLocation((isWithinGeoFence) => {
+                if (isWithinGeoFence) {
+                    const clockOutTime = new Date();
+                    document.getElementById('status').classList.remove('active');
+                    document.getElementById('status').classList.add('inactive');
+                    document.getElementById('status').innerText = '출근 전';
+                    document.getElementById('clockIn').disabled = false;
+                    document.getElementById('clockOut').disabled = true;
+                    stopWorkTimeCalculation();
+                    // 서버에 퇴근 시간 기록 요청
+                }
+            });
         });
+
+        let workTimeInterval;
+        function startWorkTimeCalculation() {
+            workTimeInterval = setInterval(() => {
+                const now = new Date();
+                const elapsed = new Date(now - clockInTime);
+                const hours = String(elapsed.getUTCHours()).padStart(2, '0');
+                const minutes = String(elapsed.getUTCMinutes()).padStart(2, '0');
+                const seconds = String(elapsed.getUTCSeconds()).padStart(2, '0');
+                document.getElementById('workTime').innerText = `근무시간: ${hours}:${minutes}:${seconds}`;
+            }, 1000);
+        }
+
+        function stopWorkTimeCalculation() {
+            clearInterval(workTimeInterval);
+        }
     </script>
 </body>
 </html>
